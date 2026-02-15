@@ -36,6 +36,44 @@ describe('cnft-burn', () => {
     console.log('fetchcNFTs', fetchcNFTs);
     assetId = fetchcNFTs[0];
   });
+  it('Rejects a non-bubblegum program id (prevents malicious CPI hijack)', async () => {
+    const asset = await getAsset(assetId);
+
+    const proof = await getAssetProof(assetId);
+    const proofPathAsAccounts = mapProof(proof);
+    const root = decode(proof.root);
+    const dataHash = decode(asset.compression.data_hash);
+    const creatorHash = decode(asset.compression.creator_hash);
+    const nonce = new anchor.BN(asset.compression.leaf_id);
+    const index = asset.compression.leaf_id;
+    const [treeAuthority, _bump2] = anchor.web3.PublicKey.findProgramAddressSync([treeAddress.toBuffer()], MPL_BUBBLEGUM_PROGRAM_ID_KEY);
+
+    const bogusProgram = anchor.web3.Keypair.generate().publicKey;
+
+    try {
+      await program.methods
+        .burnCnft(root, dataHash, creatorHash, nonce, index)
+        .accounts({
+          merkleTree: treeAddress,
+          leafOwner: payerWallet.publicKey,
+          treeAuthority: treeAuthority,
+          bubblegumProgram: bogusProgram,
+          compressionProgram: SPL_ACCOUNT_COMPRESSION_PROGRAM_ID,
+          logWrapper: SPL_NOOP_PROGRAM_ID,
+          systemProgram: anchor.web3.SystemProgram.programId,
+        })
+        .remainingAccounts(proofPathAsAccounts)
+        .rpc({ skipPreflight: true });
+
+      throw new Error('Expected the transaction to fail due to program id constraint');
+    } catch (e: any) {
+      // Anchor constraint error strings vary by version, so keep this check simple.
+      if (!e?.toString?.().includes('ConstraintAddress')) {
+        throw e;
+      }
+    }
+  });
+
   it('Burn cNft!', async () => {
     const asset = await getAsset(assetId);
 

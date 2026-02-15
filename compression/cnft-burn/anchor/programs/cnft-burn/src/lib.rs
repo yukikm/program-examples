@@ -66,21 +66,33 @@ pub mod cnft_burn {
 pub struct BurnCnft<'info> {
     #[account(mut)]
     pub leaf_owner: Signer<'info>,
+
     #[account(mut)]
     #[account(
         seeds = [merkle_tree.key().as_ref()],
         bump,
         seeds::program = bubblegum_program.key()
     )]
-    /// CHECK: This account is modified in the downstream program
+    /// CHECK: This account is modified in the downstream program (mpl-bubblegum)
     pub tree_authority: UncheckedAccount<'info>,
+
     #[account(mut)]
-    /// CHECK: This account is neither written to nor read from.
+    #[account(
+        // Merkle tree accounts are owned by the SPL Account Compression program.
+        owner = spl_account_compression::id()
+    )]
+    /// CHECK: The downstream program reads/writes this account; we only validate ownership.
     pub merkle_tree: UncheckedAccount<'info>,
-    /// CHECK: This account is neither written to nor read from.
+
+    #[account(address = spl_noop::id())]
+    /// CHECK: Used as the CPI log wrapper; must be the SPL Noop program.
     pub log_wrapper: UncheckedAccount<'info>,
+
     pub compression_program: Program<'info, SPLCompression>,
-    /// CHECK: This account is neither written to nor read from.
+
+    #[account(address = mpl_bubblegum::ID)]
+    /// CHECK: We only need the program id; constrain it to the canonical Bubblegum program.
     pub bubblegum_program: UncheckedAccount<'info>,
+
     pub system_program: Program<'info, System>,
 }
