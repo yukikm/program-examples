@@ -1,23 +1,21 @@
 use {
     borsh::{
-        BorshDeserialize, 
-        BorshSerialize 
+        BorshDeserialize,
+        BorshSerialize,
     },
     shank::ShankAccount,
     solana_program::{
-        account_info::{AccountInfo, next_account_info}, 
-        entrypoint::ProgramResult, 
+        account_info::{next_account_info, AccountInfo},
+        entrypoint::ProgramResult,
         program::invoke_signed,
+        program_error::ProgramError,
         pubkey::Pubkey,
         rent::Rent,
         system_instruction,
         sysvar::Sysvar,
     },
 };
-use crate::state::{
-    RentalOrder,
-    RentalOrderStatus,
-};
+use crate::state::{RentalOrder, RentalOrderStatus};
 
 #[derive(BorshDeserialize, BorshSerialize, Clone, Debug)]
 pub struct BookRentalArgs {
@@ -27,20 +25,19 @@ pub struct BookRentalArgs {
     pub price: u64,
 }
 
-pub fn book_rental(
-    program_id: &Pubkey,
-    accounts: &[AccountInfo],
-    args: BookRentalArgs,
-) -> ProgramResult {
-
+pub fn book_rental(program_id: &Pubkey, accounts: &[AccountInfo], args: BookRentalArgs) -> ProgramResult {
     let accounts_iter = &mut accounts.iter();
     let rental_order_account = next_account_info(accounts_iter)?;
     let car_account = next_account_info(accounts_iter)?;
     let payer = next_account_info(accounts_iter)?;
     let system_program = next_account_info(accounts_iter)?;
 
-    let (rental_order_account_pda, rental_order_account_bump) = RentalOrder::shank_pda(program_id, car_account.key, payer.key);
-    assert!(&rental_order_account_pda == rental_order_account.key);
+    let (rental_order_account_pda, rental_order_account_bump) =
+        RentalOrder::shank_pda(program_id, car_account.key, payer.key);
+    if &rental_order_account_pda != rental_order_account.key {
+        // Avoid panics in on-chain programs; return a deterministic error instead.
+        return Err(ProgramError::InvalidSeeds);
+    }
 
     let rental_order_data = RentalOrder {
         car: *car_account.key,
@@ -62,12 +59,10 @@ pub fn book_rental(
             account_span as u64,
             program_id,
         ),
-        &[
-            payer.clone(), rental_order_account.clone(), system_program.clone()
-        ],
+        &[payer.clone(), rental_order_account.clone(), system_program.clone()],
         RentalOrder::shank_seeds_with_bump(car_account.key, payer.key, &[rental_order_account_bump]),
     )?;
-    
+
     rental_order_data.serialize(&mut &mut rental_order_account.data.borrow_mut()[..])?;
 
     Ok(())

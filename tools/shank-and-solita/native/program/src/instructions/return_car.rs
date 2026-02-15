@@ -4,21 +4,15 @@ use {
         BorshSerialize,
     },
     solana_program::{
-        account_info::{AccountInfo, next_account_info}, 
-        entrypoint::ProgramResult, 
+        account_info::{next_account_info, AccountInfo},
+        entrypoint::ProgramResult,
+        program_error::ProgramError,
         pubkey::Pubkey,
     },
 };
-use crate::state::{
-    RentalOrder,
-    RentalOrderStatus,
-};
+use crate::state::{RentalOrder, RentalOrderStatus};
 
-pub fn return_car(
-    program_id: &Pubkey,
-    accounts: &[AccountInfo],
-) -> ProgramResult {
-
+pub fn return_car(program_id: &Pubkey, accounts: &[AccountInfo]) -> ProgramResult {
     let accounts_iter = &mut accounts.iter();
     let rental_order_account = next_account_info(accounts_iter)?;
     let car_account = next_account_info(accounts_iter)?;
@@ -32,7 +26,10 @@ pub fn return_car(
         ],
         program_id,
     );
-    assert!(&rental_order_account_pda == rental_order_account.key);
+    if &rental_order_account_pda != rental_order_account.key {
+        // Avoid panics in on-chain programs; return a deterministic error instead.
+        return Err(ProgramError::InvalidSeeds);
+    }
 
     let rental_order = &mut RentalOrder::try_from_slice(&rental_order_account.data.borrow())?;
     rental_order.status = RentalOrderStatus::Returned;

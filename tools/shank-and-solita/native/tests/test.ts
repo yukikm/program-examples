@@ -1,4 +1,12 @@
-import { Connection, Keypair, PublicKey, SystemProgram, sendAndConfirmTransaction, Transaction } from '@solana/web3.js';
+import {
+  Connection,
+  Keypair,
+  PublicKey,
+  SystemProgram,
+  sendAndConfirmTransaction,
+  Transaction,
+} from '@solana/web3.js';
+import { expect } from 'chai';
 import { describe, it } from 'mocha';
 import {
   type AddCarArgs,
@@ -142,5 +150,27 @@ describe('Car Rental Service', () => {
     const sx = await sendAndConfirmTransaction(connection, new Transaction().add(ix), [payer]);
     await connection.confirmTransaction(sx);
     await printRentalDetails(rentalAccountPublicKey, bmwPublicKey);
+  });
+
+  it('Rejects invalid PDAs without panicking (returns InvalidSeeds)', async () => {
+    // Previously the program used assert!() for PDA validation, which panics.
+    // This simulation verifies the failure path returns a deterministic InvalidSeeds error.
+    const bogusRentalAccount = Keypair.generate().publicKey;
+    const ix = createPickUpCarInstruction({
+      rentalAccount: bogusRentalAccount,
+      carAccount: bmwPublicKey,
+      payer: payer.publicKey,
+    });
+
+    const { blockhash } = await connection.getLatestBlockhash();
+    const tx = new Transaction({ feePayer: payer.publicKey, recentBlockhash: blockhash }).add(ix);
+    tx.sign(payer);
+
+    const sim = await connection.simulateTransaction(tx);
+    expect(sim.value.err, 'simulation should fail').to.not.equal(null);
+
+    const logs = sim.value.logs?.join('\n') ?? '';
+    expect(logs.toLowerCase()).to.include('invalid seeds');
+    expect(logs.toLowerCase()).to.not.include('panicked');
   });
 });
